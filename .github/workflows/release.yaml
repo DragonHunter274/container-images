@@ -73,6 +73,10 @@ jobs:
       - name: Prepare
         id: prep
         run: |
+          # Convert repository to lowercase for GHCR compatibility
+          REPO_LOWERCASE=${GITHUB_REPOSITORY,,}
+          echo "repo_lowercase=${REPO_LOWERCASE}" >> $GITHUB_OUTPUT
+          
           if test -f "./apps/${{ matrix.container }}/Dockerfile"; then
             CATEGORY="apps"
           else
@@ -103,7 +107,6 @@ jobs:
         with:
           platforms: amd64,arm64,arm
 
-
       - name: Login to GHCR
         uses: docker/login-action@v3
         if: github.event_name != 'pull_request'
@@ -125,9 +128,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /tmp/.buildx-cache
-          key: ${{ github.repository_owner }}/${{ matrix.container }}
+          key: ${{ steps.prep.outputs.repo_lowercase }}/${{ matrix.container }}
           restore-keys: |
-            ${{ github.repository_owner }}/${{ matrix.container }}
+            ${{ steps.prep.outputs.repo_lowercase }}/${{ matrix.container }}
 
       # Install the GOSS testing framework
       - name: Set up goss/dgoss
@@ -142,11 +145,11 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           build-args: VERSION=${{ steps.prep.outputs.version }}
-          context: ./${{ steps.prep.outputs.category }}/${{ matrix.container }}
+          context: .
           file: ./${{ steps.prep.outputs.category }}/${{ matrix.container }}/Dockerfile
           load: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/${{ matrix.container }}:test
+            ghcr.io/${{ steps.prep.outputs.repo_lowercase }}/${{ matrix.container }}:test
           cache-from: ${{ steps.prep.outputs.cache_from }}
           cache-to: ${{ steps.prep.outputs.cache_to }}
 
@@ -156,21 +159,19 @@ jobs:
         env:
           GOSS_FILE: ./${{ steps.prep.outputs.category }}/${{ matrix.container }}/goss.yaml
         run: |
-          dgoss run ghcr.io/${{ github.repository_owner }}/${{ matrix.container }}:test
+          dgoss run ghcr.io/${{ steps.prep.outputs.repo_lowercase }}/${{ matrix.container }}:test
 
       # Push if not a PR, otherwise just test the build process for all requested platforms
       - name: Build and Push
         uses: docker/build-push-action@v6
         with:
           build-args: VERSION=${{ steps.prep.outputs.version }}
-          context: ./${{ steps.prep.outputs.category }}/${{ matrix.container }}
+          context: .
           file: ./${{ steps.prep.outputs.category }}/${{ matrix.container }}/Dockerfile
           platforms: ${{ steps.prep.outputs.platform }}
           push: ${{ steps.prep.outputs.push }}
           tags: |
-            buvis/${{ matrix.container }}:latest
-            buvis/${{ matrix.container }}:v${{ steps.prep.outputs.version }}
-            ghcr.io/${{ github.repository_owner }}/${{ matrix.container }}:latest
-            ghcr.io/${{ github.repository_owner }}/${{ matrix.container }}:v${{ steps.prep.outputs.version }}
+            ghcr.io/${{ steps.prep.outputs.repo_lowercase }}/${{ matrix.container }}:latest
+            ghcr.io/${{ steps.prep.outputs.repo_lowercase }}/${{ matrix.container }}:v${{ steps.prep.outputs.version }}
           cache-from: ${{ steps.prep.outputs.cache_from }}
           cache-to: ${{ steps.prep.outputs.cache_to }}
